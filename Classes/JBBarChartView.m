@@ -11,7 +11,7 @@
 // Numerics
 CGFloat static const kJBBarChartViewBarBasePaddingMutliplier = 50.0f;
 CGFloat static const kJBBarChartViewUndefinedCachedHeight = -1.0f;
-CGFloat static const kJBBarChartViewStateAnimationDuration = 0.05f;
+CGFloat static const kJBBarChartViewStateAnimationDuration = 0.1f;
 CGFloat static const kJBBarChartViewStatePopOffset = 10.0f;
 NSInteger static const kJBBarChartViewUndefinedBarIndex = -1;
 
@@ -394,7 +394,10 @@ static UIColor *kJBBarChartViewDefaultBarColor = nil;
             NSUInteger index = 0;
             for (UIView *barView in self.barViews)
             {
-                [UIView animateWithDuration:kJBBarChartViewStateAnimationDuration delay:(kJBBarChartViewStateAnimationDuration * 0.5) * index options:UIViewAnimationOptionBeginFromCurrentState animations:^{
+                NSUInteger expandOrder = [self expandOrderForIndex:index];
+                NSTimeInterval delay = (kJBBarChartViewStateAnimationDuration * 1) * expandOrder;
+
+                [UIView animateWithDuration:kJBBarChartViewStateAnimationDuration delay:delay options:UIViewAnimationOptionBeginFromCurrentState animations:^{
                     updateBarView(barView, YES);
                 } completion:^(BOOL finished) {
                     [UIView animateWithDuration:kJBBarChartViewStateAnimationDuration delay:0.0 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
@@ -431,6 +434,16 @@ static UIColor *kJBBarChartViewDefaultBarColor = nil;
             callbackCopy();
         }
     }
+}
+
+- (NSUInteger)expandOrderForIndex:(NSUInteger)index
+{
+    BOOL useExpandOrder = (self.expandOrder && [self.expandOrder count] >= [self.barViews count]) ? YES : NO;
+
+    if (useExpandOrder) {
+        return [self.expandOrder[index] integerValue];
+    }
+    return index;
 }
 
 - (void)setState:(JBChartViewState)state animated:(BOOL)animated callback:(void (^)())callback

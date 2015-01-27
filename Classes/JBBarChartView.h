@@ -136,4 +136,11 @@
  */
 @property (nonatomic, assign, getter=isInverted) BOOL inverted;
 
+/**
+ *  Order to expand bars.
+ *
+ *  Default: nil (left to right).
+ */
+@property (nonatomic, strong) NSArray *expandOrder;
+
 @end
