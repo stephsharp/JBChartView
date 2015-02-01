@@ -115,6 +115,11 @@ static UIColor *kJBBarChartViewDefaultBarColor = nil;
 
 - (void)reloadData
 {
+    [self reloadDataAnimated:NO];
+}
+
+- (void)reloadDataAnimated:(BOOL)animated
+{
     // reset cached max height
     self.cachedMinHeight = kJBBarChartViewUndefinedCachedHeight;
     self.cachedMaxHeight = kJBBarChartViewUndefinedCachedHeight;
@@ -166,8 +171,10 @@ static UIColor *kJBBarChartViewDefaultBarColor = nil;
         {
             [barView removeFromSuperview];
         }
-        
-        self.cachedBarViewHeights = nil;
+
+        if (!animated) {
+            self.cachedBarViewHeights = nil;
+        }
         
         CGFloat xOffset = 0;
         NSUInteger index = 0;
@@ -202,7 +209,11 @@ static UIColor *kJBBarChartViewDefaultBarColor = nil;
             barView.tag = index;
 
             CGFloat height = [self normalizedHeightForRawHeight:[self.chartDataDictionary objectForKey:key]];
-            barView.frame = CGRectMake(xOffset, self.bounds.size.height - height - self.footerView.frame.size.height, [self barWidth], height);
+            CGFloat initialHeight = height;
+            if (animated) {
+                initialHeight = [self.cachedBarViewHeights[index] floatValue];
+            }
+            barView.frame = CGRectMake(xOffset, self.bounds.size.height - initialHeight - self.footerView.frame.size.height, [self barWidth], initialHeight);
             [mutableBarViews addObject:barView];
             [mutableCachedBarViewHeights addObject:[NSNumber numberWithFloat:height]];
 			
@@ -215,6 +226,15 @@ static UIColor *kJBBarChartViewDefaultBarColor = nil;
 			{
 				[self addSubview:barView];
 			}
+
+            if (animated) {
+                [UIView animateWithDuration:0.2 animations:^{
+                    CGRect tempFrame = barView.frame;
+                    tempFrame.size.height = height;
+                    tempFrame.origin.y = self.bounds.size.height - height - self.footerView.frame.size.height;
+                    barView.frame = tempFrame;
+                }];
+            }
             
             xOffset += ([self barWidth] + self.barPadding);
             index++;

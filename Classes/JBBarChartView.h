@@ -143,4 +143,9 @@
  */
 @property (nonatomic, strong) NSArray *expandOrder;
 
+/**
+ *  Reload data with optional animation of bars up/down to new positions.
+ */
+- (void)reloadDataAnimated:(BOOL)animated;
+
 @end
