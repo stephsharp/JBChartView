@@ -144,8 +144,17 @@
 @property (nonatomic, strong) NSArray *expandOrder;
 
 /**
+ *  Show data labels on top of bars.
+ *
+ *  Default: NO.
+ */
+@property (nonatomic, assign) BOOL showDataLabels;
+
+/**
  *  Reload data with optional animation of bars up/down to new positions.
  */
 - (void)reloadDataAnimated:(BOOL)animated;
+
+@property (nonatomic, assign) BOOL showDataLabelsAsPercentages;
 
 @end

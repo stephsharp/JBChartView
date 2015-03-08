@@ -11,9 +11,11 @@
 // Numerics
 CGFloat static const kJBBarChartViewBarBasePaddingMutliplier = 50.0f;
 CGFloat static const kJBBarChartViewUndefinedCachedHeight = -1.0f;
-CGFloat static const kJBBarChartViewStateAnimationDuration = 0.1f;
+CGFloat static const kJBBarChartViewStateAnimationDuration = 0.17f;
+CGFloat static const kJBBarChartViewReloadAnimationDuration = 0.2f;
 CGFloat static const kJBBarChartViewStatePopOffset = 10.0f;
 NSInteger static const kJBBarChartViewUndefinedBarIndex = -1;
+NSInteger static const kJBBarChartViewDataLabelHeight = 21;
 
 // Colors (JBChartView)
 static UIColor *kJBBarChartViewDefaultBarColor = nil;
@@ -29,12 +31,15 @@ static UIColor *kJBBarChartViewDefaultBarColor = nil;
 
 @property (nonatomic, strong) NSDictionary *chartDataDictionary; // key = column, value = height
 @property (nonatomic, strong) NSArray *barViews;
+@property (nonatomic, strong) NSArray *dataLabels;
 @property (nonatomic, strong) NSArray *cachedBarViewHeights;
+@property (nonatomic, strong) NSArray *cachedDataLabelValues;
 @property (nonatomic, assign) CGFloat barPadding;
 @property (nonatomic, assign) CGFloat cachedMaxHeight;
 @property (nonatomic, assign) CGFloat cachedMinHeight;
 @property (nonatomic, strong) JBChartVerticalSelectionView *verticalSelectionView;
 @property (nonatomic, assign) BOOL verticalSelectionViewVisible;
+@property (nonatomic) NSNumberFormatter *percentageFormatter;
 
 // Initialization
 - (void)construct;
@@ -172,14 +177,27 @@ static UIColor *kJBBarChartViewDefaultBarColor = nil;
             [barView removeFromSuperview];
         }
 
-        if (!animated) {
+        // Remove old data labels
+        if (self.showDataLabels)
+        {
+            for (UIView *dataLabelContainer in self.dataLabels)
+            {
+                [dataLabelContainer removeFromSuperview];
+            }
+        }
+
+        if (!animated)
+        {
             self.cachedBarViewHeights = nil;
+            self.cachedDataLabelValues = nil;
         }
         
         CGFloat xOffset = 0;
         NSUInteger index = 0;
         NSMutableArray *mutableBarViews = [NSMutableArray array];
+        NSMutableArray *mutableDataLabelViews = [NSMutableArray array];
         NSMutableArray *mutableCachedBarViewHeights = [NSMutableArray array];
+        NSMutableArray *mutableCachedDataLabelValues = [NSMutableArray array];
         for (NSNumber *key in [[self.chartDataDictionary allKeys] sortedArrayUsingSelector:@selector(compare:)])
         {
             UIView *barView = nil; // since all bars are visible at once, no need to cache this view
@@ -208,39 +226,83 @@ static UIColor *kJBBarChartViewDefaultBarColor = nil;
             
             barView.tag = index;
 
-            CGFloat height = [self normalizedHeightForRawHeight:[self.chartDataDictionary objectForKey:key]];
+            NSNumber *rawHeight = [self.chartDataDictionary objectForKey:key];
+            CGFloat height = [self normalizedHeightForRawHeight:rawHeight];
             CGFloat initialHeight = height;
+
             if (animated) {
                 initialHeight = [self.cachedBarViewHeights[index] floatValue];
             }
+
             barView.frame = CGRectMake(xOffset, self.bounds.size.height - initialHeight - self.footerView.frame.size.height, [self barWidth], initialHeight);
             [mutableBarViews addObject:barView];
             [mutableCachedBarViewHeights addObject:[NSNumber numberWithFloat:height]];
-			
+            [mutableCachedDataLabelValues addObject:rawHeight];
+
             // Add new bar
             if (self.footerView)
-			{
-				[self insertSubview:barView belowSubview:self.footerView];
-			}
-			else
-			{
-				[self addSubview:barView];
-			}
+            {
+                [self insertSubview:barView belowSubview:self.footerView];
+            }
+            else
+            {
+                [self addSubview:barView];
+            }
+
+            if (self.showDataLabels)
+            {
+                UILabel *dataLabel;
+                if (animated) {
+                    dataLabel = [self dataLabelWithValue:self.cachedDataLabelValues[index]];
+                }
+                else {
+                    dataLabel = [self dataLabelWithValue:rawHeight];
+                }
+                UIView *dataLabelContainer = [self dataLabelContainerWithLabel:dataLabel forBarView:barView];
+                [self addSubview:dataLabelContainer];
+                [mutableDataLabelViews addObject:dataLabelContainer];
+            }
 
             if (animated) {
-                [UIView animateWithDuration:0.2 animations:^{
+                CGFloat changeInHeight = height - initialHeight;
+
+                [UIView animateWithDuration:kJBBarChartViewReloadAnimationDuration animations:^{
                     CGRect tempFrame = barView.frame;
-                    tempFrame.size.height = height;
-                    tempFrame.origin.y = self.bounds.size.height - height - self.footerView.frame.size.height;
+                    tempFrame.size.height += changeInHeight;
+                    tempFrame.origin.y -= changeInHeight;
                     barView.frame = tempFrame;
                 }];
+
+                if (self.showDataLabels) {
+                    UIView *dataLabelContainer = mutableDataLabelViews[index];
+
+                    [UIView animateWithDuration:kJBBarChartViewReloadAnimationDuration animations:^{
+                        CGRect tempFrame = dataLabelContainer.frame;
+                        tempFrame.origin.y -= changeInHeight;
+                        dataLabelContainer.frame = tempFrame;
+                    }];
+
+                    // CA disregards the transition if it's in the same run loop as adding the subviews
+                    // See: http://andrewmarinov.com/working-with-uiviews-transition-animations/
+                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.01 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                        UILabel *dataLabel = dataLabelContainer.subviews[0];
+                        [UIView transitionWithView:dataLabel
+                                          duration:kJBBarChartViewReloadAnimationDuration
+                                           options:UIViewAnimationOptionTransitionCrossDissolve
+                                        animations:^{
+                                            dataLabel.text = [self formattedDataLabelTextWithRawValue:rawHeight];
+                                        } completion:nil];
+                    });
+                }
             }
             
             xOffset += ([self barWidth] + self.barPadding);
             index++;
         }
         self.barViews = [NSArray arrayWithArray:mutableBarViews];
+        self.dataLabels = [NSArray arrayWithArray:mutableDataLabelViews];
         self.cachedBarViewHeights = [NSArray arrayWithArray:mutableCachedBarViewHeights];
+        self.cachedDataLabelValues = [NSArray arrayWithArray:mutableCachedDataLabelValues];
     };
     
     /*
@@ -309,11 +371,90 @@ static UIColor *kJBBarChartViewDefaultBarColor = nil;
     [self setState:self.state animated:NO force:YES callback:nil];
 }
 
+#pragma mark - Data labels
+
+- (UILabel *)dataLabelWithValue:(NSNumber *)value
+{
+    UILabel *dataLabel = [[UILabel alloc] init];
+    dataLabel.text = [self formattedDataLabelTextWithRawValue:value];
+    dataLabel.font = [UIFont systemFontOfSize:17];
+    dataLabel.textAlignment = NSTextAlignmentCenter;
+    dataLabel.textColor = [UIColor colorWithRed:148/255.0f green:148/255.0f blue:148/255.0f alpha:1.0f];
+    [dataLabel sizeToFit];
+
+    return dataLabel;
+}
+
+- (UIView *)dataLabelContainerWithLabel:(UILabel *)dataLabel forBarView:(UIView *)barView
+{
+    // Increase width of data label to bar view width
+    CGRect frame = dataLabel.frame;
+    frame.size.width = barView.frame.size.width;
+    frame.size.height = kJBBarChartViewDataLabelHeight;
+    dataLabel.frame = frame;
+
+    NSUInteger verticalPadding = 5;
+    NSUInteger top = CGRectGetMinY(barView.frame);
+
+    UIView *labelContainer = [[UIView alloc] initWithFrame:dataLabel.frame];
+    labelContainer.center = CGPointMake(CGRectGetMidX(barView.frame), top - CGRectGetMidY(labelContainer.bounds) - verticalPadding);
+
+    [labelContainer addSubview:dataLabel];
+
+    return labelContainer;
+}
+
+- (void)toggleDataLabelText:(BOOL)showPercentages
+{
+    NSInteger index = 0;
+    for (UIView *dataLabelContainer in self.dataLabels) {
+        UILabel *dataLabel = dataLabelContainer.subviews[0];
+
+        [UIView transitionWithView:dataLabel
+                          duration:kJBBarChartViewReloadAnimationDuration
+                           options:UIViewAnimationOptionTransitionCrossDissolve
+                        animations:^{
+                            dataLabel.text = [self formattedDataLabelTextWithRawValue:self.cachedDataLabelValues[index]];
+                        } completion:nil];
+
+        index += 1;
+    }
+}
+
+- (NSString *)formattedDataLabelTextWithRawValue:(NSNumber *)value
+{
+    if (self.showDataLabelsAsPercentages) {
+        NSUInteger total = [self dataLabelsTotal];
+
+        if (total > 0) {
+            float percentage = [value floatValue] / total;
+            return [self.percentageFormatter stringFromNumber:[NSNumber numberWithFloat:percentage]];
+        }
+    }
+
+    return [value stringValue];
+}
+
+- (NSUInteger)dataLabelsTotal
+{
+    NSUInteger total = 0;
+    for (NSNumber *value in self.cachedDataLabelValues) {
+        total += [value integerValue];
+    }
+    return total;
+}
+
 #pragma mark - View Quick Accessors
 
 - (CGFloat)availableHeight
 {
-    return self.bounds.size.height - self.headerView.frame.size.height - self.footerView.frame.size.height - self.headerPadding - self.footerPadding;
+    CGFloat availableHeight = self.bounds.size.height - self.headerView.frame.size.height - self.footerView.frame.size.height - self.headerPadding - self.footerPadding;
+
+    if (self.showDataLabels) {
+        availableHeight -= kJBBarChartViewDataLabelHeight;
+    }
+
+    return availableHeight;
 }
 
 - (CGFloat)normalizedHeightForRawHeight:(NSNumber*)rawHeight
@@ -389,6 +530,11 @@ static UIColor *kJBBarChartViewDefaultBarColor = nil;
                 else
                 {
                     barView.frame = CGRectMake(barView.frame.origin.x, weakSelf.bounds.size.height - weakSelf.footerView.frame.size.height - weakSelf.footerPadding - [[weakSelf.cachedBarViewHeights objectAtIndex:barView.tag] floatValue], barView.frame.size.width, [[weakSelf.cachedBarViewHeights objectAtIndex:barView.tag] floatValue]);
+
+                    if (self.barViews.count > 0 && self.dataLabels.count == self.barViews.count) {
+                        NSUInteger barViewIndex = [self.barViews indexOfObject:barView];
+                        ((UIView *)self.dataLabels[barViewIndex]).alpha = 1.0f;
+                    }
                 }
             }
             else if (weakSelf.state == JBChartViewStateCollapsed)
@@ -400,6 +546,12 @@ static UIColor *kJBBarChartViewDefaultBarColor = nil;
                 else
                 {
                     barView.frame = CGRectMake(barView.frame.origin.x, weakSelf.bounds.size.height, barView.frame.size.width, 0.0f);
+
+                    if (self.barViews.count > 0 && self.dataLabels.count == self.barViews.count) {
+                        NSUInteger barViewIndex = [self.barViews indexOfObject:barView];
+                        ((UIView *)self.dataLabels[barViewIndex]).alpha = 0.0f;
+                    }
+
                 }
             }
         }
@@ -471,6 +623,12 @@ static UIColor *kJBBarChartViewDefaultBarColor = nil;
     [self setState:state animated:animated force:NO callback:callback];
 }
 
+- (void)setShowDataLabelsAsPercentages:(BOOL)showDataLabelsAsPercentages
+{
+    _showDataLabelsAsPercentages = showDataLabelsAsPercentages;
+    [self toggleDataLabelText:_showDataLabelsAsPercentages];
+}
+
 #pragma mark - Getters
 
 - (CGFloat)cachedMinHeight
@@ -509,6 +667,16 @@ static UIColor *kJBBarChartViewDefaultBarColor = nil;
         return fmaxf(self.cachedMaxHeight, [super maximumValue]);
     }
     return self.cachedMaxHeight;    
+}
+
+- (NSNumberFormatter *)percentageFormatter
+{
+    if (!_percentageFormatter) {
+        _percentageFormatter = [NSNumberFormatter new];
+        _percentageFormatter.numberStyle = NSNumberFormatterPercentStyle;
+        _percentageFormatter.maximumFractionDigits = 0;
+    }
+    return _percentageFormatter;
 }
 
 #pragma mark - Touch Helpers
