@@ -566,11 +566,14 @@ static UIColor *kJBBarChartViewDefaultBarColor = nil;
             NSUInteger index = 0;
             for (UIView *barView in self.barViews)
             {
+                // If height is 0, don't pop bar
+                BOOL popBar = [self.cachedDataLabelValues[index] integerValue] ? YES : NO;
+
                 NSUInteger expandOrder = [self expandOrderForIndex:index];
                 NSTimeInterval delay = (kJBBarChartViewStateAnimationDuration * 1) * expandOrder;
 
                 [UIView animateWithDuration:kJBBarChartViewStateAnimationDuration delay:delay options:UIViewAnimationOptionBeginFromCurrentState animations:^{
-                    updateBarView(barView, YES);
+                    updateBarView(barView, popBar);
                 } completion:^(BOOL finished) {
                     [UIView animateWithDuration:kJBBarChartViewStateAnimationDuration delay:0.0 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
                         updateBarView(barView, NO);
